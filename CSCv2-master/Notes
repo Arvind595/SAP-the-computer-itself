@@ -1,0 +1,759 @@
+Wed 11 Oct 08:08:10 AEST 2017
+-----------------------------
+Chris Baird showed a way to do function calls, but to make it more efficient
+I need a new ALU operation. So it's time to bite the bullet and upgrade to
+16 ALU operations. I've cloned CSC version 1 to this version, version 2.
+I've made the wiring change to the logisim version and csim, but I haven't
+defined the new ALU operations yet. Time to scribble on paper.
+
+We have to worry about the Asel line, so there are two banks of eight ALU
+operations. Here are the ones we need to keep from CSCv1:
+
+    Operation		Result
+    --------------------------
+    ALUinca		A + 1
+    ALUpassb		B
+    ALUpassa		A
+    ALUxor		A ^ B
+    ALUdadd		A + B decimal
+    ALUor		A | B
+    ALUand		A & B
+    ALUsub		A - B binary
+    ALUadd		A + B binary
+
+I want to bring in at least:
+
+    ALUdsub		A - B decimal
+    ALUbflags		anything, but flags set to B
+
+That leaves five more operations. I'd suggest at least these four:
+
+    ALUmullo		A * B binary, low  4 bits
+    ALUmulhi		A * B binary, high 4 bits
+    ALUdiv		A / B
+    ALUmod		A % B
+
+Are there other operations that would be more useful?
+
+Looking at the existing uses of the ALU, along with the Asel control line,
+we have to at least these operations when Asel is on: ALUadd, ALUpassa
+and ALUpassb. So let's try to partition up the possible operations:
+
+  Asel off		Asel on
+---------------------------------
+  ALUdadd		ALUadd
+  ALUdsub		ALUsub
+  ALUand		ALUpassa
+  ALUop			ALUpassb
+  ALUxor		ALUmullo
+  ALUinca		ALUmulhi
+  ALUbflags		ALUdiv
+  <unallocated>		ALUmod
+
+For now, I might put in ALUzero (output is zero) as the final operation,
+and temporarily implement this in cas and csim, and make sure the old
+programs can be reassembled and still work. I still need to work out what
+useful result we can have for ALUbflags. For now, zero.
+
+Wed 11 Oct 10:35:49 AEST 2017
+-----------------------------
+Right, I've made the changes, and I've tested that fibminksy still runs
+under the new system. That doesn't means it is perfect yet, but it's a
+start. Now to start defining some new instructions. hexbench2 also still
+runs, which is excellent.
+
+Wed 11 Oct 11:14:59 AEST 2017
+-----------------------------
+I wrote a test function with four callers, and it actually worked first
+time, that is so excellent! It's called firstfunction.s.
+
+I've added some more CPU instructions that use the new ALU operations.
+I've just added the extra wire from the top ROM Asel output to A12 of
+the ALU ROM. This is the "bank select" control line for the two banks
+of eight ALU operations.
+
+Hmm, I noticed that fibminsky stopped working. It was my change to
+the CLC control lines. I've reverted to the old set of control lines,
+but I should work out why it isn't working with the new ones.
+
+Found it. I had a typo on the definition of ZERO, so the new CLC
+which uses ALUzero was not right. Fixed.
+
+Wednesday 11 October  18:59:16 AEST 2017
+----------------------------------------
+I decided to write up some documentation on the instruction set and
+how to write assembly code, in the form of Instructions.md. I'm
+happy with it now. I've moved the programs into an Examples directory.
+
+Thursday 12 October  19:58:51 AEST 2017
+---------------------------------------
+A good day today. I've worked out how to convert and print an 8-bit
+unsigned number as three decimal digits. Using this, I've been able
+to modify the Minsky code to draw a full circle using VT100 escape
+sequences. Chris suggests using the tek4014 escape sequences to
+draw real pixels, and has sent me a Mandelbrot program so I can see
+the escape sequences. I've updated some of the documentation. I've
+added a -c clockrate option to csim, so I can show it down and make
+it more like the real hardware. So now I can see it draw the circle
+just like the real circuit would.
+
+Friday 13 October  08:49:51 AEST 2017
+-------------------------------------
+I wrote a small program to explore all the control line combinations
+to see which ones might be useful. Removing the duplicate instructions
+with the same effect leaves 48 instructions. This doesn't include the
+conditional instructions.  Maybe we need to come up with a way to
+consistently name them all :)
+
+Some of them I can see would be useful: ZEROMAB to zero A and B at
+the same time. No, not useful as that implies a DAB, and we can
+already DAB 0 to load A&B with a zero. Removed.
+
+Saturday 14 October  15:28:38 AEST 2017
+---------------------------------------
+I'm working on a program that enumerates all winning tic tac toe
+boards where X moves first. Had some trouble squeezing it into
+the 256 instruction limit. Getting close. I can now find this:
+181
+818
+100
+
+but the code progresses on to do this:
+
+181
+818
+110
+
+Not sure why yet. OK, fixed, and the number of winning boards is
+exactly the same as my Perl version, so I'm really happy that the
+program produces a correct result.
+
+Sunday 15 October  16:59:22 AEST 2017
+-------------------------------------
+I tried to write a recursive towers of Hanoi program, but it hurt my
+brain too much so I unrolled each level as a separate function. Chris
+asked for \ to continue lines, which I have just done. I also fixed
+the wrong line numbers report by cas on errors. Now I've edited the
+example programs to use \.
+
+Tue 17 Oct 07:40:26 AEST 2017
+-----------------------------
+Over the past few days I've written a program to print out a
+couple of stanzas of "Mel the Programmer", and also a Bubblesort
+program. Nothing much else.
+
+Saturday 21 October  09:04:44 AEST 2017
+---------------------------------------
+I started learning Verilog yesterday and I now have CSCv2 implemented
+but not working in Verilog. Current situation: the control ROMs are
+decoding the instructions, the A/B/Flags registers seem to work, the ALU
+seems to work. I store 1 into RAM location 4 but when I read it back it is
+0. $display shows the store and incorrect read. $monitor seems to show
+an extra write of 0 into RAM location 4.
+
+Saturday 21 October  12:11:22 AEST 2017
+---------------------------------------
+Fixed. I had a data_out reg in ram.v which needed to be a wire. Now
+I'm getting the lsb column of fibminsky.s working but no carry into
+the next column.
+
+That's now fixed too. I wired Cin up to the wrong Flags output bit.
+I found that $write can output ASCII characters without a newline.
+So now the Verilog version of the CPU can run fibminsky.s! I'm pretty
+chuffed that I could get a Verilog version up and running. Oh, and I
+can now see the digital lines in GTKwave :) I'll put it up in the
+Github repository soon.
+
+Sunday 22 October  08:50:09 AEST 2017
+-------------------------------------
+Yesterday I decided to make v2 the stable version. I've updated all
+the docs on the minnie and Github sites, and pointed everything to
+the CSCv2 Github site. This morning Chris suggested I try yosys to
+visualise the Verilog synthesis. It all looks good, no glaring errors. 
+
+Sunday 22 October  21:27:23 AEST 2017
+-------------------------------------
+Heh, got 8-bit multiplies to work. I fixed a MULLO bug in the process.
+Chris says he has wired up the CPU, but needs to build a clock signal
+and some output ability.
+
+Mon 23 Oct 10:10:41 AEST 2017
+-----------------------------
+I fixed up the clc output to reflect the new v2 architecture. Now I'm
+thinking if I should try to put functions in :) Something like:
+
+function fred(x) {		// Function declaration, x is optional
+}
+
+y= fred(foo);			// Function call, "y=" and "foo" optional
+
+I might start with just functions and local variables.
+
+Mon 23 Oct 14:25:33 AEST 2017
+-----------------------------
+OK, I have functions, function returns, local variables, one function
+parameter and assignment from function returns working. The compiler
+is getting as ugly as sin. But it does work! I could take my h2 compiler
+and modify it if I want to make it a proper compiler.
+
+Tue 24 Oct 09:34:43 AEST 2017
+-----------------------------
+I found a few more compiler bugs and fixed them. One had me stumped for
+quite a while. Nothing beats pen and paper for debugging :)
+
+A few days ago I had a hard time debugging when the ALU was outputting the
+wrong result/flags. I'd fixed gen_alu but the problem still persisted. I'd
+forgotten to fix the same bug in csim. To ensure that this never happens
+again, I've modified csim to load the ALU ROM image and use that to do the
+ALU operations. So now csim should behave exactly the same as the hardware.
+
+Thu 26 Oct 08:10:59 AEST 2017
+-----------------------------
+I got rid of some DRY code in the compiler yesterday. I did start work
+on a proper compiler, using a derivative of my h2 compiler as the basis.
+However, I can see that it's going to be too much work, so I stopped.
+
+This morning, I saw Chris Baird's twitter video showing his wire wrap
+CPU mostly working, maybe just a couple of broken wires on some of the
+LED displays. That's excellent. In browsing the csim source, I realised
+that I wasn't displaying the correct ALU operaion in debug mode, now fixed.
+
+Chris thinks he's also having LED current draw issues. Wish there was a
+component that was a LED array, LED drivers and limit resistors all in one
+unit. I found a way to print two hex digits in 9 instructions, so I've
+added prhex() and prhexn() to the compiler to do this.
+
+Thursday 26 October  16:24:12 AEST 2017
+---------------------------------------
+Just heard from Chris Baird on twitter: he's fixed up some wiring issues
+and his wire wrap CSCv2 is now working perfectly. Congrats to him.
+
+Thursday 26 October  16:29:56 AEST 2017
+---------------------------------------
+
+Possible 8-bit version of CSC
+=============================
+This is all hypothetical, but in case someone wants to do it. It should
+be possible to build an 8-bit version of the CSC. You'd need:
+
+- 16-bit PC:  Four 74LS161s cascaded together, or two 74LS469s.
+- bottom ROM: Two 64Kx8 EEPROMs instead of one 8Kx8 EEPROM.
+- top ROM:    One 64Kx8 EEPROM, as the control lines are the same.
+	      However, the four NZVC lines will limit PC addressing to
+	      12 bits, so you might want to choose 1Mx8 ROMs instead.
+- RAM:	      64Kx8 RAM.
+- mux:	      Two 74LS157s.
+- registers:  You will need two 8-bit registers for A & B, and one 4-bit
+	      register for the flags. So some combination of 74LS161s
+	      and/or CD4508Bs.
+- ALU:	      Two 8Kx8 EEPROMs, with the carry out of the low side
+	      connected to Cin on the high side, ditto a zero line
+	      from low to high. Use the NZVC from the high side only.
+	      Or, if you get adventurous, send some spare bits from each
+              half to the other to do 1-, 2- and perhaps 3-bit shifts.
+- clock:      Unchanged.
+
+In total:     4+2+1+1+2+3+2+1=16 chips, two more for the UART=18 chips
+
+You'd be able to use a single register (A or B) to connect to the UART
+for 8-bit output. I still can't think of a simple way to do UART input.
+
+Possible idea: connect the UART to the ALU->RAM lines. Output becomes
+PASSA + Aload + Bload + RAMwrite, and the UART reads from the bus.
+For input, it can place data on the bus which can be loaded with an
+Aload or Bload. What we'd need is a way to disable the ALU, so we would
+have to split the RAMwrite signal into two separate signals.
+
+Sunday 29 October  09:01:21 AEST 2017
+-------------------------------------
+E-mail from Chris, he's suffering UART output issues too. I had another
+look at the datasheet for the UM254R. Looks like /TXE has to go high
+after /WE goes low, but the delay can be as low as 0ns. So perhaps
+a NOT on the /WE signal to turn it into the /TXE signal?
+
+Mon  6 Nov 08:11:45 AEST 2017
+-----------------------------
+It's been a while. Chris found that using two cascaded ORs with Aload, Bload
+and Clk seems to fix the UART output. That implies the UART fires on falling
+clock signal. He has now got an LCD display attached to the CPU which is
+truly amazing.
+
+I've decided to rewire the whole CPU, so that the chips are more evenly
+spread out across three breadboards. It's given me a chance to video the
+build stages, with descriptions of specific components and to show some
+testing. I've done the ALU, A & B registers and the multiplexer.
+
+Just realised that the Flags register should have /PE wired to RAMwrite
+as per the csim simulation. All the schematics have it wired low. I've
+told Chris that it should be wired to RAMwrite.
+
+Monday 6 November  17:45:24 AEST 2017
+-------------------------------------
+Chris asked for a cas change to make it easier to enter in 2D instructions.
+Taking his suggestion and modifying it, I was able to get it so we can
+leave out the NZVC words for simple positional instructions, and to leave
+out the "xx" when checking flags. Nzxx becomes just Nz. Works. I've just
+updated all the examples and the instructions. Chris has sent in some more
+examples.
+
+Monday 6 November  22:18:33 AEST 2017
+-------------------------------------
+Over the past few days, I've been rebuilding the breadboard CSC to be CSCv2.
+As I go, I've been doing some videos of the build, explaining the components
+and showing how they can be tested. So far: ALU, A & B regs, multiplexer.
+Tonight I wired up the Flags register and the data side of the RAM. Subtle
+bug: I hadn't wired the RAM's /CE line low, so I was seeing 2V on its
+outputs :) Now fixed and it's working. I've got a test program which I'll
+run by hand to load constants into A, store in RAM, fetch them back to verify
+that they were stored OK. Tomorrow is Melb Cup day but I hope I can do a
+quick video in the morning.
+
+Wed  8 Nov 11:53:47 AEST 2017
+-----------------------------
+I got two videos done yesterday, the RAM video and then I got the PC wired
+up and did a video on that. Today I've done the yellow address wiring which
+was a real PITA. I haven't tested it yet, so that's going to be fun. Chris
+asked for - and ~ unary operators on the numeric values in cas. I've done
+an implementation and sent it to him for testing. After a few fixes, it now
+works, and I've uploaded it to Github along with a csim change that Chris
+sent in.
+
+In the evening, I recorded a video of the Address ROM and a test to show that
+it works. I found that my soldered ZIF socket/IC socket for the Control ROM
+was dodgy, so tomorrow I'll get a better socket. I recorded a test of the
+Control ROM wiring with a ROM plugged directly into the breadboard. I also
+started an architecture slideset to replace the #1 video, once I get CSCv2
+working.
+
+Sun 12 Nov 07:56:45 AEST 2017
+-----------------------------
+Quite a few things done. I've got it all wired up including the UART. Chris'
+idea of including the clock in the UART signal works great, so I've updated
+the schematic. I've done a bunch more videos and created a Youtube playlist.
+I've redone the architecture video as promised. Chris has got his CSCv2 to
+play "Bicycle Built for Two" on a piezo speaker, which is of course the
+canonical music a CPU should play.
+
+Mon 13 Nov 10:33:42 AEST 2017
+-----------------------------
+Wonderful news, Chris has managed to get CSC to run the Game of Life. An
+amazing achievement. I rewrote the Perl program to store and print text,
+with 2000 or a few more characters now able to be stored. Norman Wilson
+wanted a picture of Queen Victoria, so I found a cartoon, converted to
+ASCII and put a video of the CSC printing it out up on Twitter.
+
+Saturday 18 November  20:05:34 AEST 2017
+----------------------------------------
+I've spent a few days working on life. It runs a bit faster than Chris'
+version, but not as fast as I want it to go. Here are the # instructions:
+
+life.s:    92548 instructions for one screen's worth of output
+wktlife.s: 16301 instructions for one screen's worth of output
+
+That's only 5.6 times faster. I need to try & optimise a bit more!
+I've also added some single-stepping functionality to csim, and some
+pseudo-instructions which allow us to print out the regs and dump the
+RAM in csim. These pseudo-instructions are actually NOPs in real hardware,
+so we can keep them in and still burn ROMs from the machine code output.
+
+Sat 25 Nov 15:17:48 AEST 2017
+-----------------------------
+My breadboard is getting flakey to the point where I can't run most programs.
+During the week I looked at EasyEDA to design a PCB. I got to the point where
+I had a layout with most of the soldering on the bottom layer. However, I've
+now decided to do it on a stripboard. So I've bought some stuff from Element14
+including an AGB20 160mm x 200mm tinned stripboard (expensive). Chris Baird
+is going to mail me some resistor networks for the LEDs, and I've bought some
+74HC components as well, as Chris says they can cope with 330R resistors and
+the LEDs.
+
+I've found a 555 circuit where the one-shot lasts a maximum length regardless
+of how long you hold down the pushbutton. Needs one more resistor and a diode.
+I'll incorporate this into the stripboard version. I'll put the 555 astable
+trigger/threshold capacitor in a 2-pin socket so I can change the 555 astable
+clock signal speed. I'll leave room for a crystal oscillator, and I'll have
+six pins and three jumper positions so I can choose one-shot, astable or
+crystal as the source.
+
+I'll try a toggle button for the PC's master reset, so I can keep it reset
+while I'm turning it on or changing the clock source.
+
+I think I'll mount the resistor networks also in sockets, so I can remove
+them if I need or want the LEDs to be off. I've bought IC sockets for
+all chips. I need to buy new ZIF sockets as I cut some of the ends off the
+existing ZIF socket pins.
+
+But apart from that, it should be easy enough to migrate the existing
+breadboard design to the stripboard layout. I've printed out a diagram with
+100mil holes on 160mm x 200mm. I've placed the ICs and worked out where to
+run GND and VCC across the whole board. I'll also run CLK across the whole
+board to make it easier to get it to all the chips.
+
+This time I'll start with the 556, then the PC, then the Address and Control
+ROMs. With the LEDs, I'll be able to check the PC value, the address value
+and the control lines. Then I can start to add in the other components. Oh,
+I'll solder in the IC sockets as well, so it looks more than just an empty
+board!
+
+Sunday 26 November  13:49:27 AEST 2017
+--------------------------------------
+I breadboarded the new one-shot circuit yesterday to confirm that it works,
+which it does. Now waiting for the parts to arrive.
+
+Tuesday 5 December  22:20:57 AEST 2017
+--------------------------------------
+On a side branch, with ideas from Chris, I've designed a modification to
+CSCv2 called NSC (Next Small CPU) which can get input from the UART. It
+needs three more muxes and another ROM.
+
+On the CSCv2 front, I've got the stripboard and I've started to build CSCv2
+on it. The new 556 circuits work, and I have two headers so I can easily
+choose which clock source. I've got a toggle button for PC reset, works well.
+The PC is working, and I've got the PC lines to the two ROMs. Tonight I've
+mostly wired up the Address lines out of the Address ROM to the PC and to
+the RAM chip socket. I also have PCincr as the only line coming out from the
+Control ROM. I can single step the incomplete CPU, and the PC increments and
+then jumps. But the address values don't look right. I think that's because
+lines A8-A12 to both ROMs are floating. Tomorrow or soon I'll wire them
+low (no Flags register yet) and see if that stabilises things.
+
+Later that night, yes it was the floating address lines. I've temporarily tied
+A8-A11 low. Now I need to fix one LED which isn't working although it's
+getting 4.8V OK.
+
+Thursday 7 December  18:00:33 AEST 2017
+---------------------------------------
+Slow but steady progress. I fixed the LED. I've wired in the Mux, the A and
+B registers, and I've made a start on the ALU. But I haven't put the ALU
+chip in yet. I've written a test program to LCA and LCB several values,
+then a few address like 0x10, 0x20, 0x40, 0x80 and a JMP so I can see all
+address bits in action as well as a jump. All is working so far. Next up:
+to wire the data bus from the ALU out to the Flags, and some LEDs for the
+ALU output and the ALU operation. The latter will be interesting as we
+are using A8, A9, A10, A12 on the ALU and they are higgledy-piggledy. I might
+have to cut some holes and run a few wires to get them into order.
+
+Friday 8 December  22:27:50 AEST 2017
+-------------------------------------
+I wired up the ALU output back to the RAM socket (no RAM yet) and to the
+multiplexer, so I could test TAB and TBA instructions. All good except
+I would TAB binary 0001 and see 1000. I had miswired the ALU inputs! Damn,
+so I had to unsolder and fix that. Now the TAB and TBA instructions work,
+so it looks like the ALU is OK.
+
+This morning I did a bit more soldering. I have some of the remaining RAM
+wires done, and some Flags wires, but there are lots more to do. Not sure
+when I'll get a chance.
+
+Sunday 10 December  07:00:55 AEST 2017
+--------------------------------------
+I've got the RAM and the Flags wired up but not tested. Also the OR and UART
+wired up, so I can do output. Yesterday I had a stuck on LSB to the A-register.
+I just diagnosed it as a miswriting to ping 4 (VIO) on the UART which explains
+why it was stuck high.
+
+I'm running genascii.s and it prints out the first 16 chars OK but it doesn't
+increment to the 0x3X range. So I'm guessing that the Flags register isn't
+working correctly. I haven't done the LEDs for it and the data bus yet, so
+that's the next thing to do. So it is about 95% done, just a few things to
+iron out.
+
+Sun 10 Dec 17:55:28 AEST 2017
+-----------------------------
+I wired up the data bus LEDs and the Flags LEDs, and then got on to debugging
+the genascii.s problem. Um, it helps to wire the Flags output to the Address
+ROM _and_ the Control ROM. So, after adding 4 more yellow wires, I can now
+run genascii.s properly.
+
+I'm now running fibminsky.s. The sine wave is coming out perfectly. The
+Fibonaccii calculation isn't though. It's also not the same on each run,
+so I suspect I need to put in the bypass caps on all the chips, which I
+haven't done yet. But it does run mel.s, so that's enough for now!
+
+Mon 11 Dec 08:39:33 AEST 2017
+-----------------------------
+I pulled out the LED resistors and it didn't make a difference. Right now
+I'm seeing this:
+
+0002
+0003
+0005
+0008
+0013
+0011	not 21
+
+so it seems like an issue with carry in. I'll try to get the bypass caps in
+and also check the Cin voltage. I also saw some char printing on non-DAB
+instructions, so there might be a dodgy solder joint on the OR chip. There
+was, now fixed. For a while I thought the bad DADDM was caused by the LEDs
+on the PC value, but it persists at high clock speeds with all the LED
+resistors pulled out. I've also replaced the Mux chip with a HC part, and
+all the registers are already HC parts, so it's not that. So annoying!
+
+It's also not just a Cin problem, as I'm seeing this:
+
+1584	4+1=5, 8+8=6 carry 1, 5+1+Cin=7, 1+1 != 0
+1181
+0765
+
+Any why does the Minsky sine wave work OK at full clock speed? Is it the DADDM
+instruction? Everything else works.
+
+Not just DADDM. In printhexes.s, I'm seeing 0C printed then 0F (or 01). I see
+a RAM write of 0xE to address 1, followed by a read from address 1 with value
+0xF! This happens in single-step mode, so perhaps my RAM wiring is not right.
+
+Mon 11 Dec 21:50:15 AEST 2017
+-----------------------------
+I figured it out. There are some bad RAM locations on the RAM chip, which
+don't read back the value written in at that location. Looks like locations
+below 8 are dodgy. By rewriting the programs, I've been able to run fibminsky,
+bubblesort, circle. I've written my own RAM tester to see which locations are
+bad.
+
+So, finally, I can run fibminsky at full speed :-) I've ordered some new RAM
+chips. Once they arrive, I'll have a go at running wktlife.s at > 10kHz.
+
+Wednesday 13 December  08:19:18 AEST 2017
+-----------------------------------------
+Yesterday I made a Youtube video of the stripboard version running several
+of the example programs from the Github repository. So that's probably
+about it for the project. I'm happy to say that I've designed and built
+my own CPU from scratch, and it works!
+
+Wednesday 20 December  22:40:22 AEST 2017
+-----------------------------------------
+The RAM chips finally arrived. I've swapped a new one it, but the RAM fault
+persists! So it must be a wiring problem, or the LED problem. Very frustrated.
+I'll have to look at it in depth some time.
+
+Thursday 21 December  13:18:04 AEST 2017
+----------------------------------------
+I'm using wktramtest.s to test the RAM. I'm seeing RAM location 6 always 0xF,
+and sporadically other locations (e.g. 0x3F) as zero. Same for two different
+RAM chips.
+
+I've swapped the Address/Control ROMs, same thing. So not a bad ROM chip.
+
+I've moved the location of the peek0x and poke0x instructions around and
+that fixes things up! Doesn't help me guess what the problem is though.
+Perhaps a miswiring?
+
+It's the poke0x code sequence. If I move it to after the poke1x sequence,
+the test is OK. If before, I see RAM location 6 always 0xF,
+
+Tuesday 19 December  10:45:36 AEST 2017
+---------------------------------------
+So, I've ordered a TinyFPGA B2 and the long-term goal is to develop a CPU
+and bring up RetroBSD on it. A very long-term goal!
+
+Of course, now I need to learn Verilog properly, as well as the IceStorm
+tools and probably the Lattice tools as well. Oh, and perhaps the Icarus
+Verilog tools and Verilator, and GTKwave, and the Bitscope Micro. Oh well,
+just another set of learning curves!
+
+I think I can get away with the B2, some SDI RAM, a SD card & socket,
+and a UM245R as the console device. And that means I can breadboard it on
+one or perhaps two breadboards.
+
+Looking at the pin constraints file for the B2:
+
+	pin1 usb_dp    A3
+	pin2 usb_dn    A4
+	pin3 clk_16mhz B4
+	pin14 sdo      G6
+	pin15 sdi      H7
+	pin16 sck      G7
+	pin17 ss       F7
+
+We need 10 lines for the UM245R: eight data and a read & write control line.
+So I might wire them up on the left side as lines 4 to 13. On the right side,
+pins 14-17 can be used for the SD card, pins 18-21 for the RAM. Graphically,
+on a breadboard running left to right:
+
+     +------+
+     |  SD  |
+     | Card |
+     +------+
+    +-------------+   +------+   +------+   +--------+
+    | TinyFPGA B2 |   | RAM1 |   | RAM2 |   | UM245R |
+    +-------------+   +------+   +------+   +--------+
+
+I could even have two RAM chips and have them on the same SDI bus but
+with different chip select lines to each one. As drawn now. This way the
+two USB ports are at each end of the breadboard. And there would be room
+for a few LEDs wired up to the unused pins (debugging?).
+
+All of this is pie in the sky for now. I'm thinking of bringing up some
+simpler stuff to start with:
+
+1. LED blink project from the TinyFPGA site.
+2. Send some characters out of the UM245R.
+3. Read and echo characters out of the UM245R.
+4. I could even bring up CSCv2, not using external RAM.
+
+That would get me used to the tools, the workflow and some Verilog. After
+that, I could start looking at learning the SPI stuff to communicate with
+the RAM and the SD card.
+
+At some point I should look into Wishbone, it might be useful for debugging
+or something. The Bitscope Micro decodes I2C and SPI, so maybe I should write
+debug output as SPI packets on four unused pins :-)
+
+Wednesday 20 December  22:42:19 AEST 2017
+-----------------------------------------
+I started to look at the CSCv2 Verilog code. Yosys doesn't like the tri-state
+wires, so I tried to change them by adding a new mux. It's taken me several
+hours but I finally worked it out. I also found that the declaration of
+inputs and outputs can be tidied up, so I'll do that too.
+
+Ah, the ICE40LP8K only has 16KB of RAM, so I don't think I'll be able to
+fit all three ROM images in. Luckily, I can rewrite the ALU using Verilog
+instructions, except perhaps the multiply/divide/mod stuff which I'm not
+using anyway. That means only 8KB for the addr/control ROMs, and enough left
+over for registers and RAM.
+
+Friday 22 December  16:15:47 AEST 2017
+--------------------------------------
+It's been a bit frustrating as synthesis is a lot different to simulation.
+I've had to do things differently, but just now I've actually got a
+synthesis on the ICE40LP8K with pins out to the UART. I had to add an
+active high reset line, which resets all the sequential devices (PC, Flags).
+I've reimported all the Verilog code here and it simulates OK still. In the
+process, I rewrote the ALU using behavioural code instead of the ROM.
+
+I'm sure all of the above can be optimised a fair bit.
+
+Friday 22 December  20:14:30 AEST 2017
+--------------------------------------
+OK, I've worked out how to get the Verilog code for CSCv2 into one directory
+so that it can be shared with Icarus, Lattice and Yosys. Right now it runs
+with Icarus, I can get a Lattice synthesis but Yosys dies.
+
+Hah. I had an Ubuntu package for yosys. I've just built it from the Github
+repository, and now I can build Icarus, Lattice and Yosys. Yay!
+
+Friday 22 December  22:29:12 AEST 2017
+--------------------------------------
+I was worried that the * / % Verilog operations were costing a lot of
+FPGA real estate. So I just replaced these ALU ops with +, and I get this
+comparison:
+After packing:		  After packing:
+IOs          13 / 63	  IOs          13 / 63
+GBs          0 / 8	  GBs          0 / 8
+  GB_IOs     0 / 8	    GB_IOs     0 / 8
+LCs          2555 / 7680  LCs          2419 / 7680
+  DFF        1048	    DFF        1048
+  CARRY      96	  	    CARRY      40
+  CARRY, DFF 15	  	    CARRY, DFF 15
+  DFF PASS   1045	    DFF PASS   1045
+  CARRY PASS 19	  	    CARRY PASS 10
+BRAMs        16 / 32	  BRAMs        16 / 32
+WARMBOOTs    0 / 1	  WARMBOOTs    0 / 1
+PLLs         0 / 2	  PLLs         0 / 2
+
+so there isn't too much difference.
+
+Friday 22 December  22:37:24 AEST 2017
+--------------------------------------
+Details from the datasheets. UM245R: Connecting the VCCIO pin 4 to 1.8V, 2.8V,
+or 3.3V allows the device to directly interface to 1.8V, 2.8V or 3.3V and
+other logic families without the need for external level converter ICs.
+In USB bus powered designs connect to 3V3OUT pin 19 to drive out at 3.3V
+levels (connect jumper J1 pins 1 and 2 together).
+
+The B2 schematic has two power regulators which take 5V and produce 3.3V
+and 1.2V. The iCE40 handbook says: Output Supply Voltage VCCIO, VCC_SPI is
+-0.5 to 3.6V.
+
+So we can connect 5V from UM245R to B2. I/O will be 3.3V. We need to connect
+UM245R VCCIO pin 4 to the 3V3OUT pin 19.
+
+Sunday 24 December  16:06:36 AEST 2017
+--------------------------------------
+Down in Yamba. Luke from TinyFPGA says to wire the 5V from the UM245R to
+the B2, as the B2 has its own 3V3 converter. I've also just wired a pin
+to the CSC clock derived from the 16MHz clock, so I can at least wire up
+a LED and check that the clock signal is working!
+
+Tuesday 26 December  20:46:56 AEST 2017
+---------------------------------------
+Back from Yamba. I've done a Kicad schematic with the B2 and UM245R side
+by side, and wired up a reset line plus a LED for the clock. Looks good.
+Just found out that I can use the same top-level Verilog file for both
+IceStorm and Lattice which makes things a lot easier.
+
+Tuesday 2 January  13:58:09 AEST 2018
+-------------------------------------
+Now working on getting it to run in Verilator. I had to fix up the ALU to
+remove some circular logic. Still runs in Icarus, but no Verilog output yet.
+Yay, finally got it to work! And it still runs in Icarus but much more slowly.
+Gives me confidence that it will synthesise OK with IceStorm.
+
+Hmm, I realised that the RAM wasn't being synthesised to BRAM with yosys. I've
+found a verilog RAM that does, but it's not directly compatible with my RAM.
+So I wonder if I can tweak things to use the new RAM. It should save about
+1000 cells. Yes, there's a one clock delay in reading from the RAM. Perhaps
+I can send a doubled clock to the RAM?
+
+Yes, a doubled clock works for Icarus and Verilator, and yosys gives:
+
+=== TinyFPGA_B ===
+
+   Number of wires:                457
+   Number of wire bits:           1118
+   Number of public wires:          69
+   Number of public wire bits:     290
+   Number of memories:               0
+   Number of memory bits:            0
+   Number of processes:              0
+   Number of cells:                495
+     SB_CARRY                      101
+     SB_DFF                         33
+     SB_DFFE                         9
+     SB_LUT4                       335
+     SB_RAM40_4K                    17
+
+After packing:
+IOs          14 / 63
+GBs          0 / 8
+  GB_IOs     0 / 8
+LCs          435 / 7680		was 2419!
+  DFF        25
+  CARRY      94
+  CARRY, DFF 17
+  DFF PASS   21
+  CARRY PASS 18
+BRAMs        17 / 32
+WARMBOOTs    0 / 1
+PLLs         0 / 2
+
+There is some DRY code with the half-speed clk and the TX line to tidy up.
+I've decided to keep it so that the API into the CSCv2 component is clean.
+I've just updated the TinyFPGA_B.v file to also have two clocks. Now it
+should run OK on the FPGA as well.
+
+Wednesday 3 January  21:00:17 AEST 2018
+---------------------------------------
+Coincidentally, both the TinyFPGA B2 and the UM245R turned up today. I got
+the blinky project working fine. Then I wired up the CSCv2 circuit on the
+breadboards and programmed the B2. Took a while to get the CLI programmer
+installed. Even though I had different TX and CPU clocks, I was still seeing
+doubled output chars, but the CPU was working!
+
+I've just moved the logic to create the TX signal into the CSCv2, and now
+I am getting fibminsky running fine on the B2! So the Verilog code worked
+first time. Close: it's not reacting to the reset line. However, I might
+have miswired that, so I need to check it. Overall, lots of success. I've
+only tried it up to a few hundred Hz, not to 1MHz yet :)
+
+I checked the Verilog (and added more comments). The reset logic seems OK,
+so tomorrow I'll check the voltages on the pin that is connected to the
+reset wiring. Hmm, just checked it before bed. Yes, pin 10 is getting 3.2V
+when the reset button is pressed, and this is the same voltage as the 3v3
+output on the UM245R and also the same as the average TX pin value. So
+somehow the CPU isn't reacting to this line.
+
+Wednesday 3 January  23:41:18 AEST 2018
+---------------------------------------
+I'm such a dillpickle. I had defined pin10 as an output not an input. Fixed!
